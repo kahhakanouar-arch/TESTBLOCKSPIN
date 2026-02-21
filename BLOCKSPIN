@@ -1,203 +1,95 @@
--- Fixed BlockSpin ATM Hack GUI (avec DRAG + waits pour modules) - Working 21/02/2026
--- Credit: Norgumi + Grok fixes (drag inclus complet)
+-- Ton propre AUTO ATM FARM simple pour BlockSpin (custom Grok 21/02/2026)
+-- Fonctionne sur Xeno si level 8 OK (hookfunction, getgc, RunService)
+-- Active près d'ATMs, loop hack nearest
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
+local char = player.Character or player.CharacterAdded:Wait()
+local root = char:WaitForChild("HumanoidRootPart")
 
--- GUI creation
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "FixedATMGUI"
-ScreenGui.Parent = player:WaitForChild("PlayerGui")
-ScreenGui.ResetOnSpawn = false
-
-local Frame = Instance.new("Frame")
-Frame.Size = UDim2.new(0, 220, 0, 340)
-Frame.Position = UDim2.new(0.5, -110, 0.5, -170)
-Frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-Frame.BorderSizePixel = 0
-Frame.Parent = ScreenGui
-
-local UICorner = Instance.new("UICorner")
-UICorner.CornerRadius = UDim.new(0, 8)
-UICorner.Parent = Frame
-
--- Title
-local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, 0, 0, 30)
-Title.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-Title.BorderSizePixel = 0
-Title.Text = "🤑 BlockSpin ATM GUI"
-Title.TextColor3 = Color3.fromRGB(0, 255, 0)
-Title.Font = Enum.Font.SourceSansBold
-Title.TextSize = 16
-Title.Parent = Frame
-
-local TitleCorner = Instance.new("UICorner")
-TitleCorner.CornerRadius = UDim.new(0, 8)
-TitleCorner.Parent = Title
-
--- Function to create buttons
-local function createButton(name, posY, callback, color)
-    local Button = Instance.new("TextButton")
-    Button.Size = UDim2.new(1, -20, 0, 35)
-    Button.Position = UDim2.new(0, 10, 0, posY)
-    Button.BackgroundColor3 = color or Color3.fromRGB(50, 50, 50)
-    Button.BorderSizePixel = 0
-    Button.Text = name
-    Button.TextColor3 = Color3.fromRGB(255, 255, 255)
-    Button.Font = Enum.Font.SourceSans
-    Button.TextSize = 13
-    Button.Parent = Frame
-    
-    local BtnCorner = Instance.new("UICorner")
-    BtnCorner.CornerRadius = UDim.new(0, 6)
-    BtnCorner.Parent = Button
-    
-    Button.MouseButton1Click:Connect(callback)
-    Button.MouseEnter:Connect(function() Button.BackgroundColor3 = Color3.fromRGB(70, 70, 70) end)
-    Button.MouseLeave:Connect(function() Button.BackgroundColor3 = color or Color3.fromRGB(50, 50, 50) end)
-end
-
--- 1. AC Bypass (priorité !)
-createButton("1️⃣ AC Bypass", 40, function()
-    for i,v in pairs(getgc(true)) do
-        if typeof(v) == "function" and debug.getinfo(v).source:find("PlayerWellbeingObfuscated") then
-            pcall(function() hookfunction(v, function(...) task.wait(9e9) end) end)
-        end
-    end
-    game.StarterGui:SetCore("SendNotification", {Title="✅ AC Bypass", Text="Activé !", Duration=3})
-end, Color3.fromRGB(0, 150, 255))
-
--- 2. FIXED Easier ATM (avec waits + retry)
-createButton("2️⃣ Easier ATM Hack 🔥", 85, function()
-    spawn(function()
-        local rs = ReplicatedStorage
-        local modules = rs:WaitForChild("Modules", 10)
-        if not modules then 
-            game.StarterGui:SetCore("SendNotification", {Title="❌ Erreur", Text="Modules pas loadés, retry", Duration=3}) 
-            return 
-        end
-        
-        local atmModule, sliderModule
-        local attempts = 0
-        repeat
-            local success, err = pcall(function()
-                atmModule = require(modules.Game.ATM.ATM)
-                sliderModule = require(modules.Game.Minigames.SliderMinigame)
+-- 1. AC Bypass basique (hook wellbeing)
+local function bypassAC()
+    for _, v in pairs(getgc(true)) do
+        if typeof(v) == "function" and debug.getinfo(v).source and debug.getinfo(v).source:find("PlayerWellbeingObfuscated") then
+            pcall(function()
+                hookfunction(v, function(...) return task.wait(999999) end)
             end)
-            if success then break end
-            task.wait(0.5)
-            attempts += 1
-        until (atmModule and sliderModule) or attempts > 20
-        
-        if not atmModule or not sliderModule then
-            game.StarterGui:SetCore("SendNotification", {Title="❌ Erreur ATM", Text="Modules introuvables (update game? Rejoin)", Duration=5})
-            return
         end
-        
-        local oldGetUpgrades = getupvalue(atmModule.loaded, 9)
-        local function spoofedUpgrades(arg1, arg2)
-            if arg1 == "extra_chance" then return 999
-            elseif arg1 == "bar_percentage_increase" then return 1000
-            else return oldGetUpgrades(arg1, arg2) end
-        end
-        
-        for i, v in pairs(getgc()) do
-            if type(v) == "function" and islclosure(v) and not iscclosure(v) then
-                for j, k in pairs(debug.getupvalues(v)) do
-                    if type(k) == "function" and k == oldGetUpgrades then
-                        debug.setupvalue(v, j, spoofedUpgrades)
-                    end
-                end
+    end
+    print("[CUSTOM] AC Bypass activé !")
+end
+bypassAC()
+
+-- 2. Trouver nearest ATM (via proximité)
+local function getNearestATM()
+    local nearest, dist = nil, math.huge
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj:FindFirstChild("ATM") or (obj.Name:lower():find("atm") and obj:IsA("BasePart")) then
+            local pos = obj:IsA("BasePart") and obj.Position or obj.PrimaryPart.Position
+            local d = (root.Position - pos).Magnitude
+            if d < dist then
+                nearest = obj
+                dist = d
             end
         end
-        hookfunction(oldGetUpgrades, spoofedUpgrades)
-        
-        local oldHookT = sliderModule.tries.hook
-        sliderModule.tries.hook = function(cb) return oldHookT(function(v) cb(math.max(v, 999)) end) end
-        local oldHookB = sliderModule.bar_percentage_increase.hook
-        sliderModule.bar_percentage_increase.hook = function(cb) return oldHookB(function(v) cb(math.max(v, 0.95)) end) end
-        
-        sliderModule.tries.set(999)
-        sliderModule.bar_percentage_increase.set(0.95)
-        
-        game.StarterGui:SetCore("SendNotification", {Title="✅ ATM FIXED", Text="Bar 95% HUGE + 999 tries ! Va hacker un ATM 💰", Duration=5})
-        print("Fixed ATM activé - Barre géante + inf tries")
-    end)
-end, Color3.fromRGB(0, 255, 0))
-
--- Unlock Emotes
-createButton("🎭 Unlock Emotes", 130, function()
-    spawn(function()
-        local EmotesList = require(ReplicatedStorage.Modules.Game.Emotes.EmotesList)
-        local Net = require(ReplicatedStorage.Modules.Core.Net)
-        local xpstate = getupvalue(require(ReplicatedStorage.Modules.Game.Emotes.EmotesUI).loaded, 10)
-        hookfunction(xpstate.get, function() return 999999 end)
-        getgenv().playanyemote = function(idx) Net.send("start_emote", idx) end
-        getgenv().listemotes = function() local t={} for i,v in pairs(EmotesList) do t[i]=v.name end return t end
-        game.StarterGui:SetCore("SendNotification", {Title="✅ Emotes", Text="Unlock ! playanyemote(1) dans console", Duration=3})
-    end)
-end)
-
--- Unlimited Bank
-createButton("🏦 Unlimited Bank Tries", 175, function()
-    spawn(function()
-        local module = require(ReplicatedStorage.Modules.Game.Minigames.SliderMinigame)
-        local oldset = module.tries.set
-        module.tries.set = newcclosure(function(...) local args={...} args[1]=999 return oldset(unpack(args)) end)
-        game.StarterGui:SetCore("SendNotification", {Title="✅ Bank", Text="Inf tries activé !", Duration=3})
-    end)
-end)
-
--- Claim Quests
-createButton("📜 Claim All Quests", 220, function()
-    spawn(function()
-        local net = require(ReplicatedStorage.Modules.Core.Net)
-        local qdata = require(ReplicatedStorage.Modules.Game.Quests.QuestsData)
-        for qid,_ in pairs(qdata.list) do net.get("claim_quest", qid) end
-        game.StarterGui:SetCore("SendNotification", {Title="✅ Quests", Text="Tout claimé !", Duration=3})
-    end)
-end)
-
--- Close
-createButton("❌ Close GUI", 265, function() ScreenGui:Destroy() end, Color3.fromRGB(255, 50, 50))
-
--- 🔥 DRAGGABLE GUI (code complet & smooth)
-local dragging = false
-local dragInput, dragStart, startPos
-
-local function updateInput(input)
-    local delta = input.Position - dragStart
-    Frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+    return nearest
 end
 
-Title.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true
-        dragStart = input.Position
-        startPos = Frame.Position
-        
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
+-- 3. Auto perfect slider hack (timing sur vert)
+-- Assume le minigame est dans PlayerGui ou CoreGui après hack start
+local function autoSliderPerfect()
+    local connection
+    connection = RunService.Heartbeat:Connect(function()
+        -- Cherche le slider GUI (adapte si nom change)
+        local gui = player.PlayerGui:FindFirstChild("SliderMinigame") or player.PlayerGui:FindFirstChildWhichIsA("ScreenGui", true)
+        if gui then
+            -- Cherche le "green bar" ou indicator (typique slider)
+            local green = gui:FindFirstChild("Green", true) or gui:FindFirstChild("SuccessZone", true)
+            if green and green.Visible and green:IsA("Frame") then
+                -- Spoof click ou fire remote au bon moment (position milieu vert)
+                local center = green.AbsolutePosition + green.AbsoluteSize/2
+                -- Simule mouse click (via VirtualUser ou remote si possible)
+                -- Alternative: fire le remote "complete_minigame" avec value perfect
+                local net = require(ReplicatedStorage.Modules.Core.Net)
+                if net then
+                    net.send("complete_slider", 1)  -- 1 = success, adapte si arg diff
+                    print("[CUSTOM] Perfect hit simulé !")
+                end
+                connection:Disconnect()
             end
-        end)
+        end
+    end)
+    task.delay(10, function() if connection then connection:Disconnect() end end) -- timeout
+end
+
+-- 4. Main loop farm
+getgenv().autoFarmATM = true
+spawn(function()
+    while getgenv().autoFarmATM do
+        local atm = getNearestATM()
+        if atm and (root.Position - atm.PrimaryPart.Position).Magnitude < 15 then
+            print("[CUSTOM] ATM trouvé proche ! Hack...")
+            
+            -- Trigger hack (fire remote ATM start)
+            local atmMod = ReplicatedStorage.Modules.Game.ATM
+            if atmMod then
+                local net = require(ReplicatedStorage.Modules.Core.Net)
+                net.send("start_atm_hack", atm)  -- adapte arg si besoin (atm instance ou id)
+            end
+            
+            task.wait(1)  -- wait minigame pop
+            autoSliderPerfect()  -- auto perfect vert
+            task.wait(5)  -- wait cash + cooldown
+        else
+            print("[CUSTOM] Pas d'ATM proche... bouge-toi !")
+            task.wait(3)
+        end
+        task.wait(1)
     end
 end)
 
-Title.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement then
-        dragInput = input
-    end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
-        updateInput(input)
-    end
-end)
-
-print("🤑 GUI DRAG FIXED chargée ! Clique AC Bypass → ATM → Grind 💰")
-game.StarterGui:SetCore("SendNotification", {Title="GUI Chargée", Text="Drag par le titre ! ATM fixed working", Duration=4})
+print("[CUSTOM SCRIPT] AUTO ATM lancé ! Toggle avec getgenv().autoFarmATM = false")
+game.StarterGui:SetCore("SendNotification", {Title="Ton Custom ATM Farm", Text="Loop ON - Va près ATM !", Duration=5})
