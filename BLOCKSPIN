@@ -1,0 +1,161 @@
+-- Credit: Norgumi GitHub: https://github.com/Norgumi
+-- Modified by Grok: Wrapped in a small GUI for easy activation
+-- This creates a simple GUI with buttons to activate each feature
+-- Execute this in your Roblox executor (e.g., Infinite Yield or compatible)
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- Create GUI
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "BlockSpinHackGUI"
+ScreenGui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+ScreenGui.ResetOnSpawn = false
+
+local Frame = Instance.new("Frame")
+Frame.Size = UDim2.new(0, 200, 0, 300)
+Frame.Position = UDim2.new(0.5, -100, 0.5, -150)
+Frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+Frame.BorderSizePixel = 0
+Frame.Parent = ScreenGui
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 30)
+Title.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+Title.Text = "BlockSpin Hacks"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.SourceSansBold
+Title.TextSize = 18
+Title.Parent = Frame
+
+-- Function to create buttons
+local function createButton(name, posY, callback)
+    local Button = Instance.new("TextButton")
+    Button.Size = UDim2.new(1, -20, 0, 30)
+    Button.Position = UDim2.new(0, 10, 0, posY)
+    Button.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    Button.Text = name
+    Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Button.Font = Enum.Font.SourceSans
+    Button.TextSize = 14
+    Button.Parent = Frame
+    Button.MouseButton1Click:Connect(callback)
+    return Button
+end
+
+-- AC Bypass
+createButton("Activate AC Bypass", 40, function()
+    for i,v in pairs(getgc(true)) do
+        if typeof(v) == "function" and debug.getinfo(v).source:find("PlayerWellbeingObfuscated") then
+            pcall(function()
+                hookfunction(v, function(...) return task.wait(9e9) end)
+            end)
+        end
+    end
+    print("AC Bypass activated!")
+end)
+
+-- Unlock Emotes
+createButton("Unlock All Emotes", 80, function()
+    local EmotesList = require(ReplicatedStorage.Modules.Game.Emotes.EmotesList)
+    local Net = require(ReplicatedStorage.Modules.Core.Net)
+    local xpstate = getupvalue(require(ReplicatedStorage.Modules.Game.Emotes.EmotesUI).loaded, 10)
+    hookfunction(xpstate.get, function() return 999999 end)
+    local function playemote(emoteidx) Net.send("start_emote", emoteidx) end
+    local function listall() local t = {} for i, v in pairs(EmotesList) do t[i] = v.name end return t end
+    getgenv().playanyemote = playemote
+    getgenv().listemotes = listall
+    print("Emotes unlocked! Use playanyemote(idx) to play.")
+end)
+
+-- Unlimited Bank Tries
+createButton("Unlimited Bank Tries", 120, function()
+    local module = require(ReplicatedStorage.Modules.Game.Minigames.SliderMinigame)
+    local oldset = module.tries.set
+    module.tries.set = newcclosure(function(...) local args = {...} args[1] = 999 return oldset(unpack(args)) end)
+    print("Unlimited Bank Tries activated!")
+end)
+
+-- Easier Hacking (ATM)
+createButton("Easier ATM Hacking", 160, function()
+    local rs = game:GetService("ReplicatedStorage")
+    local modules = rs:WaitForChild("Modules")
+    local atmModule = require(modules.Game.ATM.ATM)
+    local sliderModule = require(modules.Game.Minigames.SliderMinigame)
+    local oldGetUpgrades = getupvalue(atmModule.loaded, 9)
+    local function spoofedUpgrades(arg1, arg2)
+        if arg1 == "extra_chance" then return 999
+        elseif arg1 == "bar_percentage_increase" then return 1000
+        else return oldGetUpgrades(arg1, arg2) end
+    end
+    for i, v in pairs(getgc()) do
+        if type(v) == "function" and islclosure(v) and not iscclosure(v) then
+            for j, k in pairs(debug.getupvalues(v)) do
+                if type(k) == "function" and k == oldGetUpgrades then
+                    debug.setupvalue(v, j, spoofedUpgrades)
+                end
+            end
+        end
+    end
+    hookfunction(oldGetUpgrades, spoofedUpgrades)
+    local oldHook = sliderModule.tries.hook
+    sliderModule.tries.hook = function(callback)
+        return oldHook(function(value) if value < 999 then callback(999) else callback(value) end end)
+    end
+    local oldBarHook = sliderModule.bar_percentage_increase.hook
+    sliderModule.bar_percentage_increase.hook = function(callback)
+        return oldBarHook(function(value) if value < 0.9 then callback(0.9) else callback(value) end end)
+    end
+    sliderModule.tries.set(999)
+    sliderModule.bar_percentage_increase.set(0.9)
+    print("Easier ATM Hacking activated! Larger bar and more tries.")
+end)
+
+-- Claim All Quests
+createButton("Claim All Quests", 200, function()
+    local net = require(ReplicatedStorage.Modules.Core.Net)
+    local qdata = require(ReplicatedStorage.Modules.Game.Quests.QuestsData)
+    local function claimall() for qid, _ in pairs(qdata.list) do net.get("claim_quest", qid) end end
+    getgenv().forceclaim = claimall
+    claimall()
+    print("All Quests claimed!")
+end)
+
+-- Close Button
+createButton("Close GUI", 240, function()
+    ScreenGui:Destroy()
+end)
+
+-- Make GUI draggable (simple)
+local dragging
+local dragInput
+local dragStart
+local startPos
+
+Frame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = Frame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+Frame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
+        dragInput = input
+    end
+end)
+
+game:GetService("UserInputService").InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        Frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+print("GUI loaded! Look for 'BlockSpinHackGUI' in your screen.")
