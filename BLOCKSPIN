@@ -1,7 +1,3 @@
--- Ton propre AUTO ATM FARM simple pour BlockSpin (custom Grok 21/02/2026)
--- Fonctionne sur Xeno si level 8 OK (hookfunction, getgc, RunService)
--- Active près d'ATMs, loop hack nearest
-
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
